@@ -1,0 +1,3163 @@
+<!--- ?????? ??????
+        2010030001    --->
+
+<html>
+
+<head>
+<title>Flappy Bird 3D</title>
+<link rel="shortcut icon" href="./media/pictures/logo.ico" />
+<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+<script type="text/javascript" src="./files/glMatrix-0.9.5.min.js"></script>
+<script type="text/javascript" src="./files/webgl-utils.js"></script>
+
+<link rel="stylesheet" href="css/style.css" type="text/css" media="screen, projection"/>
+
+
+<script id="shader-fs" type="x-shader/x-fragment">
+    precision mediump float;
+
+    varying vec2 vTextureCoord;
+    varying vec3 vLightWeighting;
+
+    uniform sampler2D uSampler;
+
+    void main(void) {
+        vec4 textureColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+        gl_FragColor = vec4(textureColor.rgb * vLightWeighting, textureColor.a);
+    }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+    attribute vec3 aVertexNormal;
+    attribute vec2 aTextureCoord;
+
+    uniform mat4 uMVMatrix;
+    uniform mat4 uPMatrix;
+    uniform mat3 uNMatrix;
+
+    uniform vec3 uAmbientColor;
+
+    uniform vec3 uLightingDirection;
+    uniform vec3 uDirectionalColor;
+
+    uniform bool uUseLighting;
+
+    varying vec2 vTextureCoord;
+    varying vec3 vLightWeighting;
+
+    void main(void) {
+        gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0);
+        vTextureCoord = aTextureCoord;
+
+        if (!uUseLighting) {
+            vLightWeighting = vec3(1.0, 1.0, 1.0);
+        } else {
+            vec3 transformedNormal = uNMatrix * aVertexNormal;
+            float directionalLightWeighting = max(dot(transformedNormal, uLightingDirection), 0.0);
+            vLightWeighting = uAmbientColor + uDirectionalColor * directionalLightWeighting;
+        }
+    }
+</script>
+
+
+<script type="text/javascript">
+
+    var gl;
+	mapX = [ 0.0, -12.0, -17.0,  10.0, 15.0,
+			-5.0,  10.0,  -7.0, -12.0,  7.0,
+			10.0,   6.0, -22.0,  11.0, 18.0,
+		   -18.0, -18.0,  14.0,  20.0,  0.0,
+		   -16.0, -12.0,   4.0,  25.0,  0.0,
+			 0.0, -10.0, -22.0,  11.0, 18.0,
+		   -15.0,  10.0,  -7.0, -12.0,  2.0,
+		   -18.0,  -8.0,   4.0,  20.0,  0.0,
+		   -15.0,  10.0,  -7.0, -12.0,  2.0,
+		   -22.0,  11.0,  18.0,  10.0, -7.0, 
+			 4.0,  25.0,   0.0,  10.0, -7.0,
+		   -12.0,   0.0, -10.0, -15.0, 10.0];
+
+	mapY = [ 0.0,    7.0, -6.0,   2.0, -9.0,
+		   -12.0,   -7.0,  8.0,  15.0,  5.0,
+			-6.0,  -13.0,  4.0,  -3.0,  0.0,
+			 0.0,    5.0, -5.0,   6.0, -2.0,
+			-1.0,   -8.0,  7.0,  10.0, 13.0,
+			-2.0,   -8.0,  4.0,  -3.0,  0.0,
+			 0.0,    5.0, -5.0,   6.0, -2.0,
+			-6.0,  -13.0,  4.0,  -3.0,  0.0,
+			-1.0,   -8.0,  7.0,   1.0,-13.0,
+			-7.0,    8.0, 15.0,   5.0, 13.0,
+			 0.0,    7.0, -6.0,   2.0, -2.0,
+			-6.0,  -13.0,  4.0,  -3.0,  5.0,];
+		
+	mapZ = [ 0.0,  -30.0,  -60.0,  -90.0,  -120.0,
+		  -150.0, -180.0, -210.0, -240.0,  -270.0,
+		  -300.0, -330.0, -360.0, -390.0,  -420.0,
+		  -450.0, -480.0, -510.0, -540.0,  -570.0,
+		  -600.0, -630.0, -660.0, -690.0,  -720.0,
+		  -750.0, -780.0, -810.0, -840.0,  -870.0,
+			-900,   -930,    960,   -990,   -1020,
+		   -1050,  -1080,  -1110,  -1140,   -1170,
+		   -1200,  -1230,  -1260,  -1290,   -1320,
+		   -1350,  -1380,  -1410,  -1440,   -1470,
+		   -1500,  -1530,  -1560,  -1590,   -1620,
+		   -1650,  -1680,  -1710,  -1740,   -1770];
+	
+	groundGoBack = [0, -2200];
+	
+	// VARIABLES
+	var spaceBetweenTube = 8;
+	var dis2tub = 52.8 + spaceBetweenTube;
+	var rCube = 0;
+	var xTrans = 0.0;
+	var yTrans = 0.0;
+	var zTrans = 0.0;
+	var flagGoUp = 0;
+	var t = 0.020;
+	var turnWingsUp = 0; 
+	var turnLeftRight = 0;
+	var gameOver = 0;
+	var starting = 1;
+	var pause = 0;
+	var a = 0;
+	var flapAudio = new Audio('./media/sounds/flap.mp3');
+	var scoreAudio = new Audio('./media/sounds/score.mp3');
+	var gameoverAudio = new Audio('./media/sounds/gameover.mp3');
+	var fallingAudio = new Audio('./media/sounds/falling.mp3');	
+	var falling = 0;
+	var score = 0;
+	var pipesPassed = 0;
+	var Curlvl = 1;
+	var highscore = [0, 0];
+	var mute = 0;
+	var soundtrackChoice = 1;
+	var cameraNo = 1;
+	
+	var speed = 0.25;
+
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+
+    var shaderProgram;
+
+    function initShaders() {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+        shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+        gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+
+        shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+        gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
+        shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+        shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+        shaderProgram.nMatrixUniform = gl.getUniformLocation(shaderProgram, "uNMatrix");
+        shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+        shaderProgram.useLightingUniform = gl.getUniformLocation(shaderProgram, "uUseLighting");
+        shaderProgram.ambientColorUniform = gl.getUniformLocation(shaderProgram, "uAmbientColor");
+        shaderProgram.lightingDirectionUniform = gl.getUniformLocation(shaderProgram, "uLightingDirection");
+        shaderProgram.directionalColorUniform = gl.getUniformLocation(shaderProgram, "uDirectionalColor");
+    }
+
+
+
+    function handleLoadedTexture(texture) {
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+        gl.generateMipmap(gl.TEXTURE_2D);
+
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+
+    var pipeTexture;
+
+    function initTexture() {
+        pipeTexture = gl.createTexture();
+        pipeTexture.image = new Image();
+        pipeTexture.image.onload = function () {
+            handleLoadedTexture(pipeTexture)
+        }
+
+        pipeTexture.image.src = "./media/pictures/pipe.jpg";
+    }
+	
+	var birdTexture;
+
+    function initBirdTexture() {
+        birdTexture = gl.createTexture();
+        birdTexture.image = new Image();
+        birdTexture.image.onload = function () {
+            handleLoadedTexture(birdTexture)
+        }
+
+        birdTexture.image.src = "./media/pictures/bird.jpg";
+    }
+
+	var wingsTexture;
+
+    function initWingsTexture() {
+        wingsTexture = gl.createTexture();
+        wingsTexture.image = new Image();
+        wingsTexture.image.onload = function () {
+            handleLoadedTexture(wingsTexture)
+        }
+
+        wingsTexture.image.src = "./media/pictures/wings.jpg";
+    }
+
+	var groundTexture;
+	
+	function initGroundTexture() {
+        groundTexture = gl.createTexture();
+        groundTexture.image = new Image();
+        groundTexture.image.onload = function () {
+            handleLoadedTexture(groundTexture)
+        }
+
+        groundTexture.image.src = "./media/pictures/ground.jpg";
+    }
+	
+	var mountainTexture;
+	
+	function initMountainTexture() {
+        mountainTexture = gl.createTexture();
+        mountainTexture.image = new Image();
+        mountainTexture.image.onload = function () {
+            handleLoadedTexture(mountainTexture)
+        }
+
+        mountainTexture.image.src = "./media/pictures/mountain.png";
+    }
+	
+	var skyTexture;
+	
+	function initSkyTexture() {
+        skyTexture = gl.createTexture();
+        skyTexture.image = new Image();
+        skyTexture.image.onload = function () {
+            handleLoadedTexture(skyTexture)
+        }
+
+        skyTexture.image.src = "./media/pictures/sky.jpg";
+    }
+	
+	
+    var mvMatrix = mat4.create();
+    var mvMatrixStack = [];
+    var pMatrix = mat4.create();
+
+    function mvPushMatrix() {
+        var copy = mat4.create();
+        mat4.set(mvMatrix, copy);
+        mvMatrixStack.push(copy);
+    }
+
+    function mvPopMatrix() {
+        if (mvMatrixStack.length == 0) {
+            throw "Invalid popMatrix!";
+        }
+        mvMatrix = mvMatrixStack.pop();
+    }
+
+
+    function setMatrixUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+        gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+
+        var normalMatrix = mat3.create();
+        mat4.toInverseMat3(mvMatrix, normalMatrix);
+        mat3.transpose(normalMatrix);
+        gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, normalMatrix);
+    }
+
+
+    function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+
+
+
+    var xRot = 0;
+    var xSpeed = 3;
+
+    var yRot = 0;
+    var ySpeed = -3;
+
+    var z = -5.0;
+
+
+    var currentlyPressedKeys = {};
+
+    function handleKeyDown(event) {
+        currentlyPressedKeys[event.keyCode] = true;
+    }
+
+
+    function handleKeyUp(event) {
+        currentlyPressedKeys[event.keyCode] = false;
+    }
+
+
+    function handleKeys() {
+        if (currentlyPressedKeys[65]) {
+            // Left cursor key
+			if (falling == 0 && starting == 0 && pause == 0) {
+				xTrans -= speed;
+			    turnLeftRight = -25;
+			}
+        }
+        if (currentlyPressedKeys[68]) {
+            // Right cursor key
+			if (falling == 0 && starting == 0 && pause == 0) {
+				xTrans += speed;
+				turnLeftRight = 25;
+			}
+        }
+        if (currentlyPressedKeys[87]) {
+			// Up cursor Key
+			if (falling == 0 && starting == 0 && pause == 0) {
+				flagGoUp = 1;
+				t = 0;
+				turnWingsUp = 25;
+				a = 0.4;
+				if (gameOver == 0 && pause == 0) {
+				flapAudio.pause();
+				if (mute == 0) {
+					flapAudio.play();
+				}
+				}
+			}
+			
+        }
+        if (currentlyPressedKeys[17]) {
+            // Space cursor key
+			if (starting == 1) {
+				starting = 0;
+				if (soundtrackChoice == 1){
+				myAudio = new Audio('./media/sounds/supermario.mp3');
+				myAudio.loop = true;
+				if (mute == 0) {
+					myAudio.play();
+				}
+			}
+			else if (soundtrackChoice == 2){
+				myAudio = new Audio('./media/sounds/angrybird.mp3');
+				myAudio.loop = true;
+				if (mute == 0) {
+					myAudio.play();
+				}
+			}
+				/*if (mute == 0) {
+					myAudio.play();
+				}*/
+			}
+			if (gameOver == 1) {
+				if (mute == 0) {
+					myAudio.play();
+				}
+				gameOver = 0;
+				falling = 0;
+				score = 0;
+				zTrans = 0;
+				xTrans = 0;
+				yTrans = 0;
+				score = 0;
+				pipesPassed = 0;
+				t = 0;
+				mapZ = [ 0.0,  -30.0,  -60.0,  -90.0,  -120.0,
+					  -150.0, -180.0, -210.0, -240.0,  -270.0,
+					  -300.0, -330.0, -360.0, -390.0,  -420.0,
+					  -450.0, -480.0, -510.0, -540.0,  -570.0,
+					  -600.0, -630.0, -660.0, -690.0,  -720.0,
+					  -750.0, -780.0, -810.0, -840.0,  -870.0,
+					    -900,   -930,    960,   -990,   -1020,
+					   -1050,  -1080,  -1110,  -1140,   -1170,
+					   -1200,  -1230,  -1260,  -1290,   -1320,
+					   -1350,  -1380,  -1410,  -1440,   -1470,
+					   -1500,  -1530,  -1560,  -1590,   -1620,
+					   -1650,  -1680,  -1710,  -1740,   -1770];
+			}
+        }
+		/* if (currentlyPressedKeys[27]) {
+			// Escape cursor key
+			if (gameOver == 0) {
+				Pause();
+			}	
+		}*/
+    }
+
+	var cubeVertexPositionBuffer;
+	var cubeVertexNormalBuffer;
+    var cubeVertexTextureCoordBuffer;
+    var cubeVertexIndexBuffer;
+	
+	function initBuffers() {
+	
+	
+        cubeVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+        vertices = [
+            // Front face - Main Body
+            -2.0,  25.0,  2.0,
+            -2.0, -25.0,  2.0,
+             2.0, -25.0,  2.0,
+             2.0,  25.0,  2.0,
+			 
+			
+			 /*------------------------------*/
+
+            // Back face - Main Body
+            -2.0,  25.0, -2.0,
+            -2.0, -25.0, -2.0,
+             2.0, -25.0, -2.0,
+             2.0,  25.0, -2.0,
+			 
+			
+			 
+			/*------------------------------*/
+
+            // Left face - Main Body
+			 -2.0, -25.0,  2.0,
+             -2.0,  25.0,  2.0,
+             -2.0,  25.0, -2.0,
+             -2.0, -25.0, -2.0,
+
+            
+			
+			/*------------------------------*/
+			
+		    // Right face - Main Body
+              2.0, -25.0,  2.0,
+			  2.0,  25.0,  2.0,
+              2.0,  25.0, -2.0,
+              2.0, -25.0, -2.0,
+
+            			
+			/*------------------------------*/
+			
+			// Top face
+			-2.0,  25, -2.0,
+            -2.0,  25,  2.0,
+			 2.0,  25,  2.0,
+			 2.0,  25, -2.0,
+
+			/*------------------------------*/
+			
+			// Bottom face
+            -2.0, -25, -2.0,
+			-2.0, -25,  2.0,
+			 2.0, -25,  2.0,
+			 2.0, -25, -2.0
+
+			/*------------------------------*/
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        cubeVertexPositionBuffer.itemSize = 3;
+        cubeVertexPositionBuffer.numItems = 24;
+
+		cubeVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexNormalBuffer);
+        var vertexNormals = [
+            // Front face
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+
+            // Back face
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+
+            // Top face
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+
+            // Bottom face
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+
+            // Right face
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+
+            // Left face
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+        cubeVertexNormalBuffer.itemSize = 3;
+        cubeVertexNormalBuffer.numItems = 24;
+		
+		
+        cubeVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+        var textureCoords = [
+          // Front face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+
+          // Back face
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+          0.0, 0.0,
+		  
+		  // Left face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+		  
+		  // Right face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+
+          // Top face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+
+          // Bottom face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+
+          
+
+          
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+        cubeVertexTextureCoordBuffer.itemSize = 2;
+        cubeVertexTextureCoordBuffer.numItems = 24;
+
+        cubeVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+        var cubeVertexIndices = [ 
+            0, 1, 2,      0, 2,  3,     // Front face
+            4, 5, 6,      4, 6,  7,     // Back face
+			8, 9, 10,     8, 10, 11,    // Left face
+			12, 13, 14,   12, 14, 15,   // Right face
+            16, 17, 18,    16, 18, 19,  // Top face
+            20, 21, 22,   20, 22, 23    // Bottom face
+           
+            
+        ];
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(cubeVertexIndices), gl.STATIC_DRAW);
+        cubeVertexIndexBuffer.itemSize = 1;
+        cubeVertexIndexBuffer.numItems = 36;
+    }
+	
+	var birdVertexPositionBuffer;
+	var birdVertexNormalBuffer;
+    var birdVertexTextureCoordBuffer;
+    var birdVertexIndexBuffer;
+	
+	function initBirdBuffers() {
+        birdVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexPositionBuffer);
+        birdVertices = [
+			//Front face
+			 0.7,  0.5,  0.0,
+			-0.7,  0.5,  0.0,
+			-0.7, -0.2,  0.0,
+			 0.7, -0.2,  0.0,
+			 
+			//Back face
+			-0.7,  0.0,  -3.0,
+			-0.7,  1.0,  -3.0,
+			 0.7,  0.0,  -3.0,
+			 0.7,  1.0,  -3.0,
+			 
+			// Left face
+			-0.7,  -0.2,  0.0,
+			-0.7,  0.0, -3.0,
+			-0.7,  0.0,  0.0,
+			-0.7,  1.0, -3.0,
+			
+			// Right Face
+			 0.7, -0.2,  0.0,
+			 0.7,  0.0,  0.0,
+			 0.7,  0.0, -3.0,
+			 0.7,  1.0, -3.0,
+			 
+			 
+			// Top Face
+			-0.7,  1.0, -3.0,
+            -0.7,  0.5,  0.0,
+             0.7,  0.5,  0.0,
+			 0.7,  1.0, -3.0,
+			 
+            // Bottom Face
+			-0.7,  -0.0,  -3.0,
+            -0.7,  -0.2,   0.0,
+             0.7,  -0.2,   0.0,
+			 0.7,  -0.0,  -3.0			 
+			
+        ];
+		
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(birdVertices), gl.STATIC_DRAW);
+        birdVertexPositionBuffer.itemSize = 3;
+        birdVertexPositionBuffer.numItems = 24;
+
+		
+		birdVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexNormalBuffer);
+        var vertexNormals = [
+            // Front face
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+
+            // Back face
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+
+            // Top face
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+
+            // Bottom face
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+
+            // Right face
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+
+            // Left face
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+        birdVertexNormalBuffer.itemSize = 3;
+        birdVertexNormalBuffer.numItems = 24;
+		
+        birdVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexTextureCoordBuffer);
+        var textureCoords = [
+          // Front face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+
+          // Back face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Left face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Right face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+
+          // Top face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+
+          // Bottom face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+        birdVertexTextureCoordBuffer.itemSize = 2;
+        birdVertexTextureCoordBuffer.numItems = 24;
+
+        birdVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, birdVertexIndexBuffer);
+        var birdVertexIndices = [ 
+            0, 1, 2,      0, 2,  3,     // Front face
+            4, 5, 6,      4, 6,  7,     // Back face
+			8, 9, 10,     8, 10, 11,    // Left face
+			12, 13, 14,   12, 14, 15,   // Right face
+            16, 17, 18,   16, 18, 19,   // Top face
+            20, 21, 22,   20, 22, 23    // Bottom face
+           
+            
+        ];
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(birdVertexIndices), gl.STATIC_DRAW);
+        birdVertexIndexBuffer.itemSize = 1;
+        birdVertexIndexBuffer.numItems = 36;
+    }
+    
+	var leftWingVertexPositionBuffer;
+	var leftVertexNormalBuffer;
+    var leftWingVertexTextureCoordBuffer;
+    var leftWingVertexIndexBuffer;
+	
+	function initLeftWingBirdBuffers() {
+        leftWingVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, leftWingVertexPositionBuffer);
+        birdVertices = [
+		
+			// Front face
+			-2.2,  1.05, -1.5,
+			-2.2,  1.2,  -1.5,
+			-0.7,  0.6,  -1.5,
+			-0.7,  0.5,  -1.5,
+			
+			// Back face
+			-2.2,  1.05,  -2.0,
+			-2.2,  1.2,  -2.0,
+			-0.7,  0.5,  -2.0,
+			-0.7,  0.5,  -2.0,
+			
+			// Left face
+			-2.2,  1.2,  -2.0,
+			-2.2,  1.1,  -2.0,
+			-2.2,  1.2,  -1.5,
+			-2.2,  1.1,  -1.5,
+			
+			// Right face
+			-0.7,  0.6,  -2.0,
+			-0.7,  0.5,  -2.0,
+			-0.7,  0.6,  -1.5,
+			-0.7,  0.5,  -1.5,
+			
+			// Top face
+			-2.2,  1.2,  -2.0,
+			-2.2,  1.2,  -1.5,
+			-0.7,  0.6,  -2.0,
+			-0.7,  0.6,  -1.5,
+			
+			// Bottom face
+			-2.2,  1.05,  -1.5,
+			-2.2,  1.05,  -2.0,
+			-0.7,  0.5,  -2.0,
+			-0.7,  0.5,  -1.5
+			 
+        ];
+		
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(birdVertices), gl.STATIC_DRAW);
+        leftWingVertexPositionBuffer.itemSize = 3;
+        leftWingVertexPositionBuffer.numItems = 24;
+
+		
+		leftVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, leftVertexNormalBuffer);
+        var vertexNormals = [
+            // Front face
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+
+            // Back face
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+
+            // Top face
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+
+            // Bottom face
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+
+            // Right face
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+
+            // Left face
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+        leftVertexNormalBuffer.itemSize = 3;
+        leftVertexNormalBuffer.numItems = 24;
+		
+		
+        leftWingVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, leftWingVertexTextureCoordBuffer);
+        var textureCoords = [
+          // Front face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+
+          // Back face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Left face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Right face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+
+          // Top face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+
+          // Bottom face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+        leftWingVertexTextureCoordBuffer.itemSize = 2;
+        leftWingVertexTextureCoordBuffer.numItems = 24;
+
+        leftWingVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, leftWingVertexIndexBuffer);
+        var leftWingVertexIndices = [ 
+            0, 1, 2,      0, 2,  3,     // Front face
+            4, 5, 6,      4, 6,  7,     // Back face
+			8, 9, 10,     8, 10, 11,    // Left face
+			12, 13, 14,   12, 14, 15,   // Right face
+            16, 17, 18,   16, 18, 19,   // Top face
+            20, 21, 22,   20, 22, 23    // Bottom face
+           
+            
+        ];
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(leftWingVertexIndices), gl.STATIC_DRAW);
+        leftWingVertexIndexBuffer.itemSize = 1;
+        leftWingVertexIndexBuffer.numItems = 36;
+    }
+	
+	var rightWingVertexPositionBuffer;
+	var rightVertexNormalBuffer;
+    var rightWingVertexTextureCoordBuffer;
+    var rightWingVertexIndexBuffer;
+	
+	function initRightWingBirdBuffers() {
+        rightWingVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, rightWingVertexPositionBuffer);
+
+		birdVertices = [
+            
+			// Front face
+			2.2,  1.05, -1.5,
+			2.2,  1.2,  -1.5,
+			0.7,  0.6,  -1.5,
+			0.7,  0.5,  -1.5,
+			
+			// Back face
+			2.2,  1.05,  -2.0,
+			2.2,  1.2,  -2.0,
+			0.7,  0.5,  -2.0,
+			0.7,  0.5,  -2.0,
+			
+			// Left face
+			0.7,  0.6,  -2.0,
+			0.7,  0.5,  -2.0,
+			0.7,  0.6,  -1.5,
+			0.7,  0.5,  -1.5,
+			
+			// Right face
+			2.2,  1.2,  -2.0,
+			2.2,  1.1,  -2.0,
+			2.2,  1.2,  -1.5,
+			2.2,  1.1,  -1.5,
+			
+			// Top face
+			2.2,  1.2,  -2.0,
+			2.2,  1.2,  -1.5,
+			0.7,  0.6,  -2.0,
+			0.7,  0.6,  -1.5,
+			
+			// Bottom face
+			2.2,  1.05,  -1.5,
+			2.2,  1.05,  -2.0,
+			0.7,  0.5,  -2.0,
+			0.7,  0.5,  -1.5
+			 
+        ];
+		
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(birdVertices), gl.STATIC_DRAW);
+        rightWingVertexPositionBuffer.itemSize = 3;
+        rightWingVertexPositionBuffer.numItems = 24;
+
+		
+		rightVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, rightVertexNormalBuffer);
+        var vertexNormals = [
+            // Front face
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+
+            // Back face
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+
+            // Top face
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+
+            // Bottom face
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+
+            // Right face
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+
+            // Left face
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+        rightVertexNormalBuffer.itemSize = 3;
+        rightVertexNormalBuffer.numItems = 24;
+		
+		
+        rightWingVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, rightWingVertexTextureCoordBuffer);
+		
+        var textureCoords = [
+          // Front face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+
+          // Back face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Left face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Right face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+
+          // Top face
+          0.0, 0.0,
+          1.0, 0.0,
+          1.0, 1.0,
+          0.0, 1.0,
+
+          // Bottom face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+        rightWingVertexTextureCoordBuffer.itemSize = 2;
+        rightWingVertexTextureCoordBuffer.numItems = 24;
+
+        rightWingVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rightWingVertexIndexBuffer);
+        var rightWingVertexIndices = [ 
+            0, 1, 2,      0, 2,  3,     // Front face
+            4, 5, 6,      4, 6,  7,     // Back face
+			8, 9, 10,     8, 10, 11,    // Left face
+			12, 13, 14,   12, 14, 15,   // Right face
+            16, 17, 18,   16, 18, 19,   // Top face
+            20, 21, 22,   20, 22, 23    // Bottom face
+        ];
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(rightWingVertexIndices), gl.STATIC_DRAW);
+        rightWingVertexIndexBuffer.itemSize = 1;
+        rightWingVertexIndexBuffer.numItems = 36;
+    }
+	
+	var groundVertexPositionBuffer;
+	var groundVertexNormalBuffer;
+    var groundVertexTextureCoordBuffer;
+    var groundVertexIndexBuffer;
+	
+	function initGroundBuffers() {
+        groundVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+
+		groundVertices = [
+			//Front face
+			-480.0,  -5.5,  70.0,
+			-480.0,  2.5,  70.0,
+			 480.0,  -5.5,  70.0,
+			 480.0,  2.5,  70.0,
+			 
+			//Back face
+			-480.0,  -5.5,  -2200.0,
+			-480.0,  2.5,  -2200.0,
+			 480.0,  -5.5,  -2200.0,
+			 480.0,  2.5,  -2200.0,
+			 
+			 // Left face
+			-480.0,  -5.5,  -2200.0,
+			-480.0,  2.5,  -2200.0,
+			-480.0,  -5.5,   70.0,
+			-480.0,  2.5,   70.0,
+			
+			// Right Face
+			 480.0,  -5.5,  70.0,
+             480.0,  2.5,  70.0,
+             480.0,  -5.5,  -2200.0,
+			 480.0,  2.5,  -2200.0,
+			 
+			 // Top Face
+			-480.0,  2.5,  70.0,
+			 -480.0,  2.5,  -2200.0,
+             480.0,  2.5,  70.0,
+			 480.0,  2.5,  -2200.0,
+            
+			// Bottom Face
+			-480.0,  -5.5,   70.0,
+			-480.0,  -5.5,  -2200.0,
+             480.0,  -5.5,   70.0,
+			 480.0,  -5.5,  -2200.0		 
+        ];
+		
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(groundVertices), gl.STATIC_DRAW);
+        groundVertexPositionBuffer.itemSize = 3;
+        groundVertexPositionBuffer.numItems = 24;
+
+		groundVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+        var vertexNormals = [
+            // Front face
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+             0.0,  0.0,  1.0,
+
+            // Back face
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+             0.0,  0.0, -1.0,
+
+            // Top face
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+             0.0,  1.0,  0.0,
+
+            // Bottom face
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+             0.0, -1.0,  0.0,
+
+            // Right face
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+             1.0,  0.0,  0.0,
+
+            // Left face
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0,
+            -1.0,  0.0,  0.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+        groundVertexNormalBuffer.itemSize = 3;
+        groundVertexNormalBuffer.numItems = 24;
+		
+        groundVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+		
+        var textureCoords = [
+          // Front face
+          0.0, 0.0,
+          1.0, 0.0,
+		  0.0, 1.0,
+          1.0, 1.0,
+
+          // Back face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Left face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+		  
+		  // Right face
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+          0.0, 0.0,
+
+          // Top face
+          0.0, 0.0,
+          1.0, 0.0,
+		  0.0, 1.0,
+		  1.0, 1.0,
+          
+          // Bottom face
+          0.0, 0.0,
+          1.0, 0.0,
+		  0.0, 1.0,
+		  1.0, 1.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(textureCoords), gl.STATIC_DRAW);
+        groundVertexTextureCoordBuffer.itemSize = 2;
+        groundVertexTextureCoordBuffer.numItems = 24;
+
+        groundVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+        var groundIndices = [ 
+            0, 1, 2,      0, 2,  3,     // Front face
+            4, 5, 6,      4, 6,  7,     // Back face
+			8, 9, 10,     8, 10, 11,    // Left face
+			12, 13, 14,   12, 14, 15,   // Right face
+            16, 17, 18,   17, 18, 19,   // Top face
+            20, 21, 22,   21, 22, 23    // Bottom face
+        ];
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(groundIndices), gl.STATIC_DRAW);
+        groundVertexIndexBuffer.itemSize = 1;
+        groundVertexIndexBuffer.numItems = 36;
+    }
+	
+	
+	function drawScene() {
+	
+	
+		if (gameOver == 1) {
+			myAudio.pause();
+		}
+		else if (pause == 1) {
+		}
+		else if (starting == 1) {
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- VIEWPORT -------------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			//the viewport gets the canvas values (that were assigned to the gl context variable)
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			//the frame and depth buffers get cleaned (the depth buffer is used for sorting fragments)
+			//without the depth buffer WebGL does not know which fragment is visible for a given pixel
+			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+			//the projection matrix (pMatrix) is set
+			//45 degrees Field-Of-View
+			//aspect ratio gl.viewportWidth / gl.viewportHeight
+			//near plane: 0.1 , far plane: 100
+			mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 10, 600.0, pMatrix);
+			//the modelview Matrix is initialized with the Identity Matrix
+			mat4.identity(mvMatrix);
+			//the ModelView matrix gets a global transformation ("camera" retracts 8 units)
+			//otherwise the "camera" will be inside the rotating cube
+			//z-axis points out of the screen. we translate -8 which is the inverse transform
+			//in essence we move the world -8 units to have the camera 8 units forward.
+			//REMEMBER there is no actual camera in WebGL
+			if (cameraNo == 1) {
+				mat4.translate(mvMatrix, [0, -32.5, -75.0]);
+			}
+			else if (cameraNo == 2) {
+				mat4.translate(mvMatrix, [-20, -20.5, -85.0]);
+				mat4.rotate(mvMatrix, degToRad(10), [1, 0, 0]);
+				mat4.rotate(mvMatrix, degToRad(25), [0, 1, 0]);		
+			}
+			
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			//------------------------------------------ TUBE START -----------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			// TOP
+			
+			for (var tubeNo=0; tubeNo < mapX.length; tubeNo++) 
+			{	
+					mvPushMatrix();
+					//a translation associated with the keyboard
+					mat4.translate(mvMatrix, [mapX[tubeNo], mapY[tubeNo] + dis2tub , mapZ[tubeNo] ]);  
+					//a rotation connected with animation parameters
+					//mat4.rotate(mvMatrix, degToRad(rCube), [0, 1, 0]);
+					/*********************************************/
+					//BIND BUFFERS!!!!!!!!!!!!
+					//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+					/************************************************/
+					//we bind the buffer for the cube vertices
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+					
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexNormalBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, cubeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+					
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+					gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, cubeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, pipeTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+					//we bind the buffer for the cube vertex indices
+					gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+					/********************************************************************/
+					//we update the uniforms for the shaders
+					setMatrixUniforms();
+					//we call the Draw Call of WebGL to draw the cube
+					//Triangles mode
+					gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+					
+					mvPopMatrix();
+					
+
+					// BOTTOM 
+					
+					//Keyboard controlled cube
+					//we use the matrix stack to employ a local transformation to the cube
+					mvPushMatrix();
+					//a translation associated with the keyboard
+					mat4.translate(mvMatrix, [mapX[tubeNo],mapY[tubeNo], mapZ[tubeNo]]);
+					//a rotation connected with animation parameters
+					//mat4.rotate(mvMatrix, degToRad(rCube), [0, 1, 0]);
+					/*********************************************/
+					//BIND BUFFERS!!!!!!!!!!!!
+					//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+					/************************************************/
+					//we bind the buffer for the cube vertices
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+					
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexNormalBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, cubeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+					gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, cubeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, pipeTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+					//we bind the buffer for the cube vertex indices
+					gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+					/********************************************************************/
+					//we update the uniforms for the shaders
+					setMatrixUniforms();
+					//we call the Draw Call of WebGL to draw the cube
+					//Triangles mode
+					gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+					
+					mvPopMatrix();
+				
+			}
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- BIRD MAIN BODY START -------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [0, 27.5, 50]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, birdVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, birdVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, birdVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, birdTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, birdVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, birdVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- BIRD MAIN BODY END ---------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- LEFT WING START-------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [0.2, 27.5, 50]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, leftWingVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, leftWingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, leftVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, leftVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, leftWingVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, leftWingVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, wingsTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+				
+			
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, leftWingVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, leftWingVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- LEFT WING END --------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- RIGHT WING START -----------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-0.2, 27.5, 50]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, rightWingVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, rightWingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, rightVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, rightVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, rightWingVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, rightWingVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, wingsTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rightWingVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, rightWingVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- RIGHT WING END -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- GROUND START ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [0,-12.2, zTrans]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, groundTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- GROUND END -----------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN START -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [0,-36.2, -277]);
+			mat4.rotate(mvMatrix, degToRad(90), [1, 0, 0]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, mountainTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN END ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN RIGHT START -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [480, -70, -320]);
+			mat4.rotate(mvMatrix, degToRad(90), [0, 0, 1]);
+			mat4.rotate(mvMatrix, degToRad(270), [0, 1, 0]);
+			//mat4.rotate(mvMatrix, degToRad(90), [0, 0, 1]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, mountainTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN RIGHT END ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- SKY START -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [0 , 85, zTrans]);
+			//mat4.rotate(mvMatrix, degToRad(90), [1, 0, 0]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, skyTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- SKY END ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+		
+		}
+		else {
+		
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- VIEWPORT -------------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			//the viewport gets the canvas values (that were assigned to the gl context variable)
+			gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+			//the frame and depth buffers get cleaned (the depth buffer is used for sorting fragments)
+			//without the depth buffer WebGL does not know which fragment is visible for a given pixel
+			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+			//the projection matrix (pMatrix) is set
+			//45 degrees Field-Of-View
+			//aspect ratio gl.viewportWidth / gl.viewportHeight
+			//near plane: 0.1 , far plane: 100
+			mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 10, 1000.0, pMatrix);
+			//the modelview Matrix is initialized with the Identity Matrix
+			mat4.identity(mvMatrix);
+			//the ModelView matrix gets a global transformation ("camera" retracts 8 units)
+			//otherwise the "camera" will be inside the rotating cube
+			//z-axis points out of the screen. we translate -8 which is the inverse transform
+			//in essence we move the world -8 units to have the camera 8 units forward.
+			//REMEMBER there is no actual camera in WebGL
+			if (cameraNo == 1) {
+				mat4.translate(mvMatrix, [0, -32.5, -75.0]);
+			}
+			else if (cameraNo == 2) {
+				mat4.translate(mvMatrix, [-20, -20.5, -85.0]);
+				mat4.rotate(mvMatrix, degToRad(10), [1, 0, 0]);
+				mat4.rotate(mvMatrix, degToRad(25), [0, 1, 0]);		
+			}
+			
+			
+			
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			//------------------------------------------ TUBE START -----------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			// SMOOTHING MOTION
+			if (flagGoUp == 1 ) {
+				yTrans = yTrans + 0.3 - 0.5*9.8 *t*t;
+				flagGoUp = 2;
+				t = t + 0.020;
+			}
+			else if (flagGoUp == 2) {
+				yTrans = yTrans + 0.17 - 0.5*9.8 *t*t;
+				flagGoUp = 2;
+				t = t + 0.004;
+			}	
+			else {
+				yTrans = yTrans - 0.5*9.8*t*t;
+			}
+			
+			t = t + 0.004;
+			
+			
+			// LIMIT TO RIGHT AND LEFT
+			if (xTrans > 60 ) {
+				xTrans = 60;
+			}
+			else if (xTrans < -60) {
+			    xTrans = -60;
+			}
+			
+			// LIMIT TO THE SKY
+			if (yTrans > 37) {
+				yTrans = 37 ;//- 0.5*9.8*t*t;;
+				t = t + 0.010;
+			}// LIMIT TO THE GROUND
+			else if (yTrans < -36.8) {
+				yTrans = -36.8;
+				if (falling == 0) {
+					if (mute == 0) {
+						gameoverAudio.play();
+					}
+				}
+				gameOver = 1;
+				myAudio.pause();
+			}
+			
+			// TOP
+			
+			for (var tubeNo=0; tubeNo < mapX.length; tubeNo++) 
+			{	if (mapZ[tubeNo] == 54.5 && falling == 0) {
+					pipesPassed = pipesPassed + 1;
+				}
+				if (mapZ[tubeNo] < 55) {
+					if ( (mapZ[tubeNo] > 46 ) && (mapZ[tubeNo] < 55 ) ){
+						if ( ( -xTrans + mapX[tubeNo] > -2.3) && (-xTrans + mapX[tubeNo] < 2.3) ) {
+							if ( (-yTrans + mapY[tubeNo] + dis2tub -25 < 29) ||  (-yTrans + mapY[tubeNo] + 25 > 28) ) {	
+								if (mute == 0) {
+									fallingAudio.play();
+								}
+								falling = 1;
+								myAudio.pause();
+							}
+							else {
+								if (Curlvl == 1) {
+									if (mapZ[tubeNo] > 54.5 ) {
+										if (falling == 0) {
+											score = score + 1;
+											if (mute == 0) {
+												scoreAudio.play();
+											}
+										}
+									}
+								}
+								if (Curlvl == 2) {
+									if (mapZ[tubeNo] > 54.4 ) {
+										if (falling == 0) {
+											score = (score + 1);
+											if (mute == 0) {
+												scoreAudio.play();
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					mvPushMatrix();
+					//a translation associated with the keyboard
+					mat4.translate(mvMatrix, [-xTrans + mapX[tubeNo], -yTrans + mapY[tubeNo] + dis2tub , mapZ[tubeNo] ]);  
+					//a rotation connected with animation parameters
+					//mat4.rotate(mvMatrix, degToRad(rCube), [0, 1, 0]);
+					/*********************************************/
+					//BIND BUFFERS!!!!!!!!!!!!
+					//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+					/************************************************/
+					//we bind the buffer for the cube vertices
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+					
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexNormalBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, cubeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+					gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, cubeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, pipeTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+					
+					//we bind the buffer for the cube vertex indices
+					gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+					/********************************************************************/
+					//we update the uniforms for the shaders
+					setMatrixUniforms();
+					//we call the Draw Call of WebGL to draw the cube
+					//Triangles mode
+					gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+					
+					mvPopMatrix();
+					
+
+					// BOTTOM 
+					
+					//Keyboard controlled cube
+					//we use the matrix stack to employ a local transformation to the cube
+					mvPushMatrix();
+					//a translation associated with the keyboard
+					mat4.translate(mvMatrix, [-xTrans + mapX[tubeNo], -yTrans + mapY[tubeNo], mapZ[tubeNo]]);
+					//a rotation connected with animation parameters
+					//mat4.rotate(mvMatrix, degToRad(rCube), [0, 1, 0]);
+					/*********************************************/
+					//BIND BUFFERS!!!!!!!!!!!!
+					//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+					/************************************************/
+					//we bind the buffer for the cube vertices
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+					
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexNormalBuffer);
+					gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, cubeVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+					
+					gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+					gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, cubeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+					gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, pipeTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+					
+					//we bind the buffer for the cube vertex indices
+					gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+					/********************************************************************/
+					//we update the uniforms for the shaders
+					setMatrixUniforms();
+					//we call the Draw Call of WebGL to draw the cube
+					//Triangles mode
+					gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+					
+					mvPopMatrix();
+					
+					if (falling == 0) {
+						mapZ[tubeNo] = mapZ[tubeNo] + speed;
+					}
+				}
+				else {
+					mapZ[tubeNo] = -1770;
+					
+				}
+			}
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- BIRD MAIN BODY START -------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [0, 27.5, 50]);
+			//a rotation connected with animation parameters
+			mat4.rotate(mvMatrix, degToRad(-turnLeftRight), [0, 0, 1]);
+			mat4.rotate(mvMatrix, degToRad(yTrans*0.5), [1, 0, 0]);
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, birdVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, birdVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.bindBuffer(gl.ARRAY_BUFFER, birdVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, birdVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, birdTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, birdVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, birdVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- BIRD MAIN BODY END ---------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- LEFT WING START-------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [0.2 + a, 27.5, 50]);
+			//a rotation connected with animation parameters
+			mat4.rotate(mvMatrix, degToRad(turnWingsUp-turnLeftRight), [0, 0, 1]);
+			mat4.rotate(mvMatrix, degToRad(yTrans*0.7), [1, 0, 0]);
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, leftWingVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, leftWingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, leftVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, leftVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+					
+			gl.bindBuffer(gl.ARRAY_BUFFER, leftWingVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, leftWingVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, wingsTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+				
+			
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, leftWingVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, leftWingVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- LEFT WING END --------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- RIGHT WING START -----------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-0.2 - a, 27.5, 50]);
+			//a rotation connected with animation parameters
+			mat4.rotate(mvMatrix, degToRad(-turnWingsUp-turnLeftRight), [0, 0, 1]);
+			mat4.rotate(mvMatrix, degToRad(yTrans*0.7), [1, 0, 0]);
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, rightWingVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, rightWingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, rightVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, rightVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, rightWingVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, rightWingVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, wingsTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rightWingVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, rightWingVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- RIGHT WING END -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- GROUND START ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-xTrans, -yTrans -12.2, groundGoBack[0]]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, groundTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-xTrans, -yTrans -12.2, groundGoBack[1]]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, groundTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- GROUND END -----------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN START -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-xTrans, -yTrans -36.2, -277]);
+			mat4.rotate(mvMatrix, degToRad(90), [1, 0, 0]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, mountainTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN END ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN RIGHT START -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-xTrans + 480, -yTrans -70, -320]);
+			mat4.rotate(mvMatrix, degToRad(90), [0, 0, 1]);
+			mat4.rotate(mvMatrix, degToRad(270), [0, 1, 0]);
+			//mat4.rotate(mvMatrix, degToRad(90), [0, 0, 1]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, mountainTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			
+			
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- MOUNTAIN RIGHT END ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- SKY START -------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-xTrans, -yTrans + 85, groundGoBack[0]]);
+			//mat4.rotate(mvMatrix, degToRad(90), [1, 0, 0]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, skyTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			
+			mvPushMatrix();
+			//a translation associated with the keyboard
+			mat4.translate(mvMatrix, [-xTrans, -yTrans + 85, groundGoBack[1]]);
+			//mat4.rotate(mvMatrix, degToRad(90), [1, 0, 0]);
+			//a rotation connected with animation parameters
+			/*********************************************/
+			//BIND BUFFERS!!!!!!!!!!!!
+			//MUST BE DONE ONCE BEFORE DRAWING AN OBJECT
+			/************************************************/
+			//we bind the buffer for the cube vertices
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexPositionBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, groundVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexNormalBuffer);
+			gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, groundVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			
+			gl.bindBuffer(gl.ARRAY_BUFFER, groundVertexTextureCoordBuffer);
+			gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, groundVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+			gl.activeTexture(gl.TEXTURE0);
+					gl.bindTexture(gl.TEXTURE_2D, skyTexture);
+					gl.uniform1i(shaderProgram.samplerUniform, 0);
+					var lighting = document.getElementById("lighting").checked;
+					gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+					if (lighting) {
+						gl.uniform3f(
+							shaderProgram.ambientColorUniform,
+							parseFloat(document.getElementById("ambientR").value),
+							parseFloat(document.getElementById("ambientG").value),
+							parseFloat(document.getElementById("ambientB").value)
+						);
+
+						var lightingDirection = [
+							parseFloat(document.getElementById("lightDirectionX").value),
+							parseFloat(document.getElementById("lightDirectionY").value),
+							parseFloat(document.getElementById("lightDirectionZ").value)
+						];
+						var adjustedLD = vec3.create();
+						vec3.normalize(lightingDirection, adjustedLD);
+						vec3.scale(adjustedLD, -1);
+						gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD);
+
+						gl.uniform3f(
+							shaderProgram.directionalColorUniform,
+							parseFloat(document.getElementById("directionalR").value),
+							parseFloat(document.getElementById("directionalG").value),
+							parseFloat(document.getElementById("directionalB").value)
+						);
+					}
+					
+			
+			//we bind the buffer for the cube vertex indices
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, groundVertexIndexBuffer);
+			/********************************************************************/
+			//we update the uniforms for the shaders
+			setMatrixUniforms();
+			//we call the Draw Call of WebGL to draw the cube
+			//Triangles mode
+			gl.drawElements(gl.TRIANGLES, groundVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+			mvPopMatrix();
+			//-----------------------------------------------------------------------------------------------------------------
+			// ----------------------------------- SKY END ---------------------------------------------------------------
+			//-----------------------------------------------------------------------------------------------------------------
+			
+			groundGoBack[0] = groundGoBack[0] + speed;
+			groundGoBack[1] = groundGoBack[1] + speed;
+			
+			if (groundGoBack[0] == 2200) {
+				groundGoBack[0] = groundGoBack[1] - 2200;
+			}
+			
+			if (groundGoBack[1] == 2200) {
+				groundGoBack[1] = groundGoBack[0] - 2200;
+			}
+			
+			turnWingsUp = 0;
+			turnLeftRight = 0;
+			a = 0;
+			
+			if (falling == 0){
+				zTrans = zTrans + speed;
+			}			
+		}
+    }
+
+
+    var lastTime = 0;
+
+    function animate() {
+        var timeNow = new Date().getTime();
+        if (lastTime != 0) {
+            var elapsed = timeNow - lastTime;
+
+            xRot += (xSpeed * elapsed) / 1000.0;
+            yRot += (ySpeed * elapsed) / 1000.0;
+        }
+        lastTime = timeNow;
+    }
+
+
+    function tick() {
+        requestAnimFrame(tick);
+        handleKeys();
+        drawScene();
+		if (score > highscore[Curlvl-1]) {
+			highscore[Curlvl-1] = score;
+		}
+		document.getElementById("ScoreConsole").innerHTML = "SCORE: " + score + " / "+ pipesPassed;
+        document.getElementById("ScoreConsole").style.fontFamily="COMIC SANS MS";
+		document.getElementById("ScoreConsole").style.color= "white";
+		document.getElementById("ScoreConsole").style.fontSize='23'+'px';
+		
+		document.getElementById("HighscoreForLevel").innerHTML = "LEVEL: " + Curlvl + " |  HIGHSCORE: " + highscore[Curlvl-1];
+		document.getElementById("HighscoreForLevel").style.fontFamily="COMIC SANS MS";
+		document.getElementById("HighscoreForLevel").style.color = "white";
+		document.getElementById("HighscoreForLevel").style.fontSize='23'+'px';
+
+        animate();
+    }
+
+
+    function webGLStart() {
+		
+        var canvas = document.getElementById("TUCWebGL");
+        initGL(canvas);
+        initShaders();
+		
+        initBuffers();
+		initBirdBuffers();
+		initLeftWingBirdBuffers();
+		initRightWingBirdBuffers();
+		initGroundBuffers();
+		
+        initTexture();
+		initBirdTexture();
+		initWingsTexture();
+		initGroundTexture();
+		initMountainTexture();
+		initSkyTexture();
+
+        gl.clearColor(0.0, 0.0, 0.0, 0.0);
+        gl.enable(gl.DEPTH_TEST);
+
+		//define the keyboard handlers
+		document.onkeydown = handleKeyDown;
+        document.onkeyup = handleKeyUp;
+        tick();
+    }
+
+	function Level(x)
+	{
+	
+		Curlvl = x;
+		if (Curlvl == 1)
+		{
+				if (starting == 0) {
+					myAudio.pause();
+				}
+				gameOver = 0;
+				falling = 0;
+				score = 0;
+				zTrans = 0;
+				xTrans = 0;
+				yTrans = 0;
+				score = 0;
+				pipesPassed = 0;
+				speed = 0.25;
+				pause = 0;
+				starting = 1;
+				t = 0;
+				groundGoBack = [0, -2200];
+				
+				mapX = [ 0.0, -12.0, -17.0,  10.0, 15.0,
+						-5.0,  10.0,  -7.0, -12.0,  7.0,
+						10.0,   6.0, -22.0,  11.0, 18.0,
+					   -18.0, -18.0,  14.0,  20.0,  0.0,
+					   -16.0, -12.0,   4.0,  25.0,  0.0,
+					     0.0, -10.0, -22.0,  11.0, 18.0,
+					   -15.0,  10.0,  -7.0, -12.0,  2.0,
+				       -18.0,  -8.0,   4.0,  20.0,  0.0,
+				       -15.0,  10.0,  -7.0, -12.0,  2.0,
+				       -22.0,  11.0,  18.0,  10.0, -7.0, 
+					     4.0,  25.0,   0.0,  10.0, -7.0,
+				       -12.0,   0.0, -10.0, -15.0, 10.0];
+
+				mapY = [ 0.0,    7.0, -6.0,   2.0, -9.0,
+					   -12.0,   -7.0,  8.0,  15.0,  5.0,
+						-6.0,  -13.0,  4.0,  -3.0,  0.0,
+						 0.0,    5.0, -5.0,   6.0, -2.0,
+						-1.0,   -8.0,  7.0,  10.0, 13.0,
+						-2.0,   -8.0,  4.0,  -3.0,  0.0,
+						 0.0,    5.0, -5.0,   6.0, -2.0,
+						-6.0,  -13.0,  4.0,  -3.0,  0.0,
+						-1.0,   -8.0,  7.0,   1.0,-13.0,
+						-7.0,    8.0, 15.0,   5.0, 13.0,
+						 0.0,    7.0, -6.0,   2.0, -2.0,
+						-6.0,  -13.0,  4.0,  -3.0,  5.0,];
+					
+				mapZ = [ 0.0,  -30.0,  -60.0,  -90.0,  -120.0,
+					  -150.0, -180.0, -210.0, -240.0,  -270.0,
+					  -300.0, -330.0, -360.0, -390.0,  -420.0,
+					  -450.0, -480.0, -510.0, -540.0,  -570.0,
+					  -600.0, -630.0, -660.0, -690.0,  -720.0,
+					  -750.0, -780.0, -810.0, -840.0,  -870.0,
+					    -900,   -930,    960,   -990,   -1020,
+					   -1050,  -1080,  -1110,  -1140,   -1170,
+					   -1200,  -1230,  -1260,  -1290,   -1320,
+					   -1350,  -1380,  -1410,  -1440,   -1470,
+					   -1500,  -1530,  -1560,  -1590,   -1620,
+					   -1650,  -1680,  -1710,  -1740,   -1770];
+		}
+		else if (Curlvl == 2)
+		{	
+				if (starting == 0) {
+					myAudio.pause();
+				}
+				gameOver = 0;
+				falling = 0;
+				score = 0;
+				zTrans = 0;
+				xTrans = 0;
+				yTrans = 0;
+				score = 0;
+				pipesPassed = 0;
+				t = 0;
+				speed = 0.50;
+				pause = 0;
+				starting = 1;
+				groundGoBack = [0, -2200];
+				
+				mapX = [ 0.0,  14.0,  14.0,   4.0,  9.0,
+					   -18.0, -18.0,  14.0,  20.0,  0.0,
+					   -12.0,   0.0, -10.0, -15.0, 10.0,
+					    -2.0, -12.0, -13.0,   2.0, 12.0,
+					   -15.0,  10.0,  -7.0,  12.0,  9.0,
+					    10.0,   6.0, -22.0,  11.0, 18.0,
+					   -18.0, -18.0,  14.0,  20.0,  0.0,
+					    -7.0,  12.0,   9.0,  14.0, 20.0,
+					   -16.0,  12.0, -24.0,  25.0, 10.0,
+					   -15.0,  10.0,  -7.0, -12.0,  2.0,
+					   -12.0, -13.0,   6.0, -22.0, 11.0,
+					     0.0, -10.0, -22.0,  11.0, 18.0];
+
+				mapY = [ 0.0,  -7.0,  -6.0, 12.0,  -9.0,
+						-7.0,   8.0,  15.0,  5.0,  13.0,
+						 7.0,  10.0, -13.0,  4.0,  -3.0,
+						-1.0,  -8.0,   7.0, 10.0,  13.0,
+						-2.0,  -8.0,   4.0, -3.0,   0.0,
+					    -1.0,  -8.0,   7.0, 10.0, -13.0,
+					     2.0,  -7.0,   8.0, 15.0,   5.0,
+					     7.0,  -3.0,   4.0, -3.0,  -7.0,
+					     0.0,   5.0,  -5.0,  9.0, -12.0,
+					    -1.0,  -8.0,   7.0,  1.0, -13.0,
+					     7.0,  10.0, -13.0, -7.0,  -6.0,
+					     0.0,   5.0,  -5.0,  6.0,  -2.0];
+					
+				mapZ = [ 0.0,  -30.0,  -60.0,  -90.0,  -120.0,
+					  -150.0, -180.0, -210.0, -240.0,  -270.0,
+					  -300.0, -330.0, -360.0, -390.0,  -420.0,
+					  -450.0, -480.0, -510.0, -540.0,  -570.0,
+					  -600.0, -630.0, -660.0, -690.0,  -720.0,
+					  -750.0, -780.0, -810.0, -840.0,  -870.0,
+					    -900,   -930,    960,   -990,   -1020,
+					   -1050,  -1080,  -1110,  -1140,   -1170,
+					   -1200,  -1230,  -1260,  -1290,   -1320,
+					   -1350,  -1380,  -1410,  -1440,   -1470,
+					   -1500,  -1530,  -1560,  -1590,   -1620,
+					   -1650,  -1680,  -1710,  -1740,   -1770];
+		}
+		
+	}
+	
+	function Soundtrack(x) {
+		soundtrackChoice = x;
+		myAudio.pause();
+		
+		if (soundtrackChoice == 1){
+			myAudio = new Audio('./media/sounds/supermario.mp3');
+			myAudio.loop = true;
+			if (mute == 0) {
+				myAudio.play();
+			}
+		}
+		else if (soundtrackChoice == 2){
+			myAudio = new Audio('./media/sounds/angrybird.mp3');
+			myAudio.loop = true;
+			if (mute == 0) {
+				myAudio.play();
+			}
+		}
+	}
+	
+	function Pause() {
+		if (pause == 0 && starting == 0) {
+			pause = 1;
+		}
+		else {
+			pause = 0;
+		}
+	}
+	
+	function Camera(x) {
+		cameraNo = x;
+	}
+	
+	function Mute() {
+		if (mute == 0) {
+			myAudio.pause();
+			mute = 1;
+		}
+		else {
+			myAudio.play();
+			mute = 0;
+		}
+	}
+	
+	function Highscore()
+	{
+		var message = "HIGHSCORES\nLevel 1 = " + highscore[0] + "\nLevel 2 = " + highscore[1];
+		alert(message);
+	}
+	function Instuctions()
+	{
+		var message = "KEYS:\nW: Flap,\nA: Turn left,\nD: Turn right\nLeft Control: Start Game/Retry\nEscape: Pause\n\nGAMEPLAY:\nTry to pass through the pipes to gain points.\nAvoid collision with the pipes and falling to the ground."
+		alert(message);
+	}
+	function About()
+	{
+		var message = "AUTHOR:\nPEGIOS FOTIOS\n2010030001\n\nSUBJECT:\nGRAPHICS PROJECT 2014"
+		alert(message);
+	}
+</script>
+
+
+</head>
+
+
+<body  onload="webGLStart();"  style="margin-left: auto; margin-right:auto;" >  <!-- background="./media/pictures/background.jpg" -->
+
+	
+		
+	<table width="1000" height="50" border="0" align=center>
+
+        <tr>
+            <td style=padding:0px align=center> 
+				<div id="p1">
+					<span style="color: #660000; font-family: Helvetica Neue, Arial, Helvetica, sans-serif; font-size: large;"><b>Flappy Bird 3D</b></span>
+				</div>
+            </td>
+        </tr>
+
+        <tr>
+            <td>
+                <div id="page-wrap">
+                    <ul class="dropdown">
+                        <li><a href="#">Level</a>
+                            <ul class="sub_menu">
+                                <li><a style="cursor:pointer" onclick="Level(1)">Level 1</a></li>
+                                <li><a style="cursor:pointer" onclick="Level(2)">Level 2</a></li>	 
+                            </ul>
+                        </li>
+                        <li><a style="cursor:pointer" onclick="Highscore()" >Highscores</a></li>
+						<li><a href="#">Soundtrack</a>
+                            <ul class="sub_menu">
+                                <li><a style="cursor:pointer" onclick="Soundtrack(1)">Super Mario Theme</a></li>
+                                <li><a style="cursor:pointer" onclick="Soundtrack(2)">Angry Bird Theme</a></li>		
+								
+                            </ul>
+                        </li>
+						<li><a href="#">Camera</a>
+							<ul class="sub_menu">
+                                <li><a style="cursor:pointer" onclick="Camera(1)">First Person</a></li>
+                                <li><a style="cursor:pointer" onclick="Camera(2)">Broadcasting</a></li>		
+                            </ul>
+						</li>
+						
+						<li><a style="cursor:pointer" onclick="Pause()">Pause</a></li>
+						<li><a style="cursor:pointer" onclick="Mute()">Mute</a></li>
+                        <li><a style="cursor:pointer" onclick="Instuctions()">Instructions</a></li>
+                        <li><a style="cursor:pointer" onclick="About()" >About</a></li>
+                    </ul>
+                </div>
+            </td>
+        </tr>
+
+
+        <tr>
+            <td align=center>
+                <canvas id="TUCWebGL" style=" border: none;" width="1000" height="550"></canvas>
+            </td>
+        </tr>
+
+        <tr>
+            <td>
+
+                <table>
+                    <tr >
+                        <td  align=center style="position: absolute; top: 550px; left: -60px;" width=50%;>					
+							<font    face="COMIC SANS MS" font size="5" color="white">  
+                            <p  id="ScoreConsole"> </p>
+							</font>							
+                        </td>
+
+                        <td></td>
+                        <td></td>
+                        <td></td>	
+											
+                        <td></td>
+                        <td></td>
+                        <td></td>
+						
+                        <td align=center style="position: absolute; top: 550px; left: 660px;" width=50%;>
+							<font    face="COMIC SANS MS" font size="5" color="white"> 
+                             <p id="HighscoreForLevel"></p>
+							 </font>							 
+                        </td>
+						
+                    </tr>
+                </table>
+            </td>
+			
+        </tr>
+		
+    </table>
+    <br/>
+	<input type="checkbox" id="lighting" checked />Use lighting<br/>
+    <h2>Directional light:</h2>
+
+    <table style="border: 0; padding: 10px;">
+        <tr>
+            <td><b>Direction:</b>
+            <td>X: <input type="text" id="lightDirectionX" value="-1.25" />
+            <td>Y: <input type="text" id="lightDirectionY" value="-1.25" />
+            <td>Z: <input type="text" id="lightDirectionZ" value="-3.0" />
+        </tr>
+        <tr>
+            <td><b>Colour:</b>
+            <td>R: <input type="text" id="directionalR" value="0.8" />
+            <td>G: <input type="text" id="directionalG" value="0.8" />
+            <td>B: <input type="text" id="directionalB" value="0.8" />
+        </tr>
+    </table>
+
+    <h2>Ambient light:</h2>
+    <table style="border: 0; padding: 10px;">
+        <tr>
+            <td><b>Colour:</b>
+            <td>R: <input type="text" id="ambientR" value="0.8" />
+            <td>G: <input type="text" id="ambientG" value="0.8" />
+            <td>B: <input type="text" id="ambientB" value="0.8" />
+        </tr>
+    </table>
+</body>
+
+</html>
