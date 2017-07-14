@@ -2,4 +2,4 @@
 3D version of the popular ‘Flappy Bird’ game using WebGL
 
 You can run the game in this link: 
-http://fpegios.hol.es/projects/flappyBird3D/index.html
+https://fpegios.000webhostapp.com/projects/flappyBird3D/index.html
